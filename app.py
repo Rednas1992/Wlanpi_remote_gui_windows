@@ -97,7 +97,7 @@ class PiSession:
 
     def _run(self):
         try:
-            self._emit("status", f"Verbinden met {self.host}...")
+            self._emit("status", f"Connecting to {self.host}...")
             self.client = paramiko.SSHClient()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             host, _, port = self.host.partition(":")
@@ -111,13 +111,13 @@ class PiSession:
                 allow_agent=True,
             )
 
-            self._emit("status", "Bridge uploaden...")
+            self._emit("status", "Uploading bridge...")
             sftp = self.client.open_sftp()
             sftp.put(str(BRIDGE_LOCAL), BRIDGE_REMOTE)
             sftp.close()
 
             python = self._find_python()
-            self._emit("status", f"FPMS starten ({python})...")
+            self._emit("status", f"Starting FPMS ({python})...")
 
             self.chan = self.client.get_transport().open_session()
             self.chan.get_pty(term="dumb", width=200, height=50)
@@ -127,9 +127,9 @@ class PiSession:
             self.alive = True
             self._read_loop()
         except paramiko.AuthenticationException:
-            self._emit("error", "Inloggen mislukt: controleer gebruiker/wachtwoord.")
+            self._emit("error", "Login failed: check user/password.")
         except Exception as e:
-            self._emit("error", f"Verbinding mislukt: {e}")
+            self._emit("error", f"Connection failed: {e}")
         finally:
             self.alive = False
             self._emit("closed")
@@ -144,7 +144,7 @@ class PiSession:
         _, out, _ = self.client.exec_command(cmd, timeout=10)
         py = out.read().decode().strip().splitlines()
         if not py:
-            raise RuntimeError("FPMS (wlanpi-fpms) niet gevonden op dit apparaat")
+            raise RuntimeError("FPMS (wlanpi-fpms) not found on this device")
         return py[0].strip()
 
     def _heartbeat(self):
@@ -181,11 +181,11 @@ class PiSession:
                 if tag == "SUDO":
                     sudo_tries += 1
                     if not self.password:
-                        self._emit("error", "sudo vraagt een wachtwoord: vul het wachtwoord in.")
+                        self._emit("error", "sudo asks for a password: please enter the password.")
                         self.chan.close()
                         return
                     if sudo_tries > 1:
-                        self._emit("error", "sudo-wachtwoord onjuist.")
+                        self._emit("error", "sudo password incorrect.")
                         self.chan.close()
                         return
                     self._send(self.password + "\n")
@@ -204,7 +204,7 @@ class PiSession:
                 elif tag == "LOG":
                     self._emit("log", payload)
                 elif tag == "BYE":
-                    self._emit("status", "FPMS-service wordt hersteld.")
+                    self._emit("status", "Restoring the FPMS service.")
 
 
 # --------------------------------------------------------------------------
@@ -231,7 +231,7 @@ class App(tk.Tk):
         self.canvas = tk.Canvas(self, bg=BODY_EDGE, highlightthickness=0)
         self.canvas.pack(padx=12, pady=(4, 6))
         self.status = tk.Label(
-            self, text="Niet verbonden", anchor="w", bg=BODY_EDGE, fg=TEXT, font=("Segoe UI", 9)
+            self, text="Not connected", anchor="w", bg=BODY_EDGE, fg=TEXT, font=("Segoe UI", 9)
         )
         self.status.pack(fill="x", padx=12, pady=(0, 8))
 
@@ -269,14 +269,14 @@ class App(tk.Tk):
         lbl("Host")
         self.host_entry = ttk.Entry(bar, textvariable=self.host_var, width=16)
         self.host_entry.pack(side="left", padx=(0, 8))
-        lbl("Gebruiker")
+        lbl("User")
         ttk.Entry(bar, textvariable=self.user_var, width=9).pack(side="left", padx=(0, 8))
-        lbl("Wachtwoord")
+        lbl("Password")
         pw = ttk.Entry(bar, textvariable=self.pass_var, show="•", width=11)
         pw.pack(side="left", padx=(0, 8))
         pw.bind("<Return>", lambda e: self._toggle_connect())
 
-        self.connect_btn = ttk.Button(bar, text="Verbinden", command=self._toggle_connect)
+        self.connect_btn = ttk.Button(bar, text="Connect", command=self._toggle_connect)
         self.connect_btn.pack(side="left", padx=(0, 6))
         ttk.Button(bar, text="Screenshot", command=self._save_png).pack(side="left", padx=(0, 6))
 
@@ -361,7 +361,7 @@ class App(tk.Tk):
             img = self.frame.resize((s, s), Image.NEAREST)
         else:
             img = Image.new("RGB", (s, s), "black")
-            msg = "scherm slaapt" if self.sleeping else ("" if self.session else "niet verbonden")
+            msg = "screen asleep" if self.sleeping else ("" if self.session else "not connected")
             if msg:
                 ImageDraw.Draw(img).text((s / 2, s / 2), msg, fill="#444", anchor="mm")
         self.photo = ImageTk.PhotoImage(img)
@@ -398,22 +398,22 @@ class App(tk.Tk):
         host = self.host_var.get().strip()
         user = self.user_var.get().strip()
         if not host or not user:
-            messagebox.showwarning("WLAN Pi Remote", "Vul host en gebruiker in.")
+            messagebox.showwarning("WLAN Pi Remote", "Please enter host and user.")
             return
         self._save_cfg()
         self.session = PiSession(host, user, self.pass_var.get(), self.events)
-        self.connect_btn.config(text="Verbreken")
+        self.connect_btn.config(text="Disconnect")
         self.session.start()
 
     def _disconnect(self):
         s, self.session = self.session, None
         if s:
             threading.Thread(target=s.close, daemon=True).start()
-        self.connect_btn.config(text="Verbinden")
+        self.connect_btn.config(text="Connect")
         self.frame = None
         self.sleeping = False
         self._render_screen()
-        self._set_status("Niet verbonden (FPMS-service wordt op de Pi hersteld)")
+        self._set_status("Not connected (FPMS service is being restored on the Pi)")
 
     def _save_png(self):
         if self.frame is None:
@@ -425,7 +425,7 @@ class App(tk.Tk):
         )
         if path:
             self.frame.resize((SCREEN_PX * 4, SCREEN_PX * 4), Image.NEAREST).save(path)
-            self._set_status(f"Opgeslagen: {path}")
+            self._set_status(f"Saved: {path}")
 
     def _on_zoom(self, _e=None):
         self.scale = int(self.scale_var.get().rstrip("x"))
@@ -458,8 +458,8 @@ class App(tk.Tk):
                     if has_keys != self.show_keys:
                         self.show_keys = has_keys
                         self._draw_device()
-                    hint = "pijltjes, Enter" + (", 1/2/3" if self.show_keys else "")
-                    self._set_status(f"Verbonden met {self.host_var.get()}" + (f" ({model})" if model else "") + f"  |  {hint}")
+                    hint = "arrows, Enter" + (", 1/2/3" if self.show_keys else "")
+                    self._set_status(f"Connected to {self.host_var.get()}" + (f" ({model})" if model else "") + f"  |  {hint}")
                 elif kind == "sleep":
                     self.sleeping = True
                     self._render_screen()
@@ -472,10 +472,10 @@ class App(tk.Tk):
                     messagebox.showerror("WLAN Pi Remote", data)
                 elif kind == "closed":
                     self.session = None
-                    self.connect_btn.config(text="Verbinden")
+                    self.connect_btn.config(text="Connect")
                     self.frame = None
                     self._render_screen()
-                    self._set_status("Verbinding gesloten")
+                    self._set_status("Connection closed")
         except queue.Empty:
             pass
         if latest:
